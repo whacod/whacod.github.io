@@ -2,18 +2,14 @@ import { showModal } from './ui.js';
 import { db, auth } from './firebase.js'; 
 
 // ==========================================
-// 1. KONFIGURASI PROVIDER & HARGA SPESIFIK
+// 1. KONFIGURASI PROVIDER (KHUSUS WHA)
 // ==========================================
 const PROVIDERS = {
-    "herosms": { name: "HER", url: "https://hero.camarugulam.workers.dev", currency: "USD", minPrice: 0, maxPrice: 15000 },
-    "smscode": { name: "COD", url: "https://code.camarugulam.workers.dev", currency: "IDR", minPrice: 0, maxPrice: 1500 },
-    "smsvirt": { name: "SVC", url: "https://svco.camarugulam.workers.dev", currency: "USD", minPrice: 0, maxPrice: 15000 },
     "smsvirt_wa": { name: "WHA", url: "https://whacod.camarugulam.workers.dev", currency: "USD", minPrice: 0, maxPrice: 30000 },
-    "otpcepat": { name: "CEP", url: "https://ocepat.camarugulam.workers.dev", currency: "IDR", minPrice: 0, maxPrice: 1500 },
 };
 
-let activeProviderKey = localStorage.getItem('xurel_provider') || "herosms";
-if (!PROVIDERS[activeProviderKey]) activeProviderKey = "herosms";
+let activeProviderKey = localStorage.getItem('xurel_provider') || "smsvirt_wa";
+if (!PROVIDERS[activeProviderKey]) activeProviderKey = "smsvirt_wa";
 let BASE_URL = PROVIDERS[activeProviderKey].url;
 
 let currentServerName = ""; 
@@ -136,31 +132,17 @@ function cleanOpName(name) {
 }
 
 // ==========================================
-// KONTROL NEGARA KHUSUS (ID, PH, VN)
+// KONTROL NEGARA KHUSUS (ID & PH)
 // ==========================================
 export function updateCountryDropdown() {
     const countrySelect = document.getElementById('sms-country');
     if (!countrySelect) return;
     
-    let html = '';
-    let allowed = ['ID'];
-    
-    if (activeProviderKey === 'smscode' || activeProviderKey === 'smsvirt' || activeProviderKey === 'smsvirt_wa') {
-        html += `<option value="ID">🇮🇩 ID</option>`;
-        html += `<option value="PH">🇵🇭 PH</option>`;
-        allowed.push('PH');
-    } else if (activeProviderKey === 'smsbower') {
-        html += `<option value="ID">🇮🇩 ID</option>`;
-        html += `<option value="PH">🇵🇭 PH</option>`;
-        html += `<option value="VN">🇻🇳 VN</option>`;
-        allowed.push('PH', 'VN');
-    } else if (activeProviderKey === 'otpcepat') {
-        html += `<option value="ID">🇮🇩 ID</option>`;
-        html += `<option value="VN">🇻🇳 VN</option>`;
-        allowed.push('VN');
-    } else {
-        html += `<option value="ID">🇮🇩 ID</option>`;
-    }
+    let html = `
+        <option value="ID">🇮🇩 ID</option>
+        <option value="PH">🇵🇭 PH</option>
+    `;
+    let allowed = ['ID', 'PH'];
     
     if (!allowed.includes(activeCountry)) {
         activeCountry = 'ID';
@@ -439,24 +421,18 @@ async function loadSmsPrices() {
     let cMin = PROVIDERS[activeProviderKey].minPrice;
     let cMax = PROVIDERS[activeProviderKey].maxPrice;
     
-    if (activeProviderKey === "smscode" || activeProviderKey === "otpcepat") {
-        json.data.filter(i => i.price >= cMin && i.price <= cMax).forEach(i => normalizedPrices.push({ pid: i.id, price: i.price, opCode: i.injected_operator_id || i.operator || 'any', opName: cleanOpName(i.operator) }));
-    } else if (activeProviderKey === "smsbower") {
-        json.data.filter(i => {
-            let idr = parseFloat(i.price) * currentUsdRate;
-            return idr >= cMin && idr <= cMax;
-        }).forEach(i => {
-             normalizedPrices.push({ pid: i.id, price: i.price, opCode: i.injected_operator_id || 'any', opName: cleanOpName(i.operator) });
-        });
-    } else if (activeProviderKey === "herosms" || activeProviderKey === "hwa" || activeProviderKey === "smsvirt" || activeProviderKey === "smsvirt_wa") {
-        json.data.filter(i => { let idr = parseFloat(i.price) * currentUsdRate; return idr >= cMin && idr <= cMax; }).forEach(i => {
-             normalizedPrices.push({ pid: i.id, price: i.price, opCode: 'any', opName: 'ANY (ACAK)' });
-             if (i.operatorStock) {
-                 let opList = Array.isArray(i.operatorStock) ? i.operatorStock : Object.keys(i.operatorStock);
-                 opList.forEach(op => { normalizedPrices.push({ pid: i.id, price: i.price, opCode: op, opName: cleanOpName(op) }); });
-             }
-        });
-    }
+    json.data.filter(i => { 
+        let idr = parseFloat(i.price) * currentUsdRate; 
+        return idr >= cMin && idr <= cMax; 
+    }).forEach(i => {
+        normalizedPrices.push({ pid: i.id, price: i.price, opCode: 'any', opName: 'ANY (ACAK)' });
+        if (i.operatorStock) {
+            let opList = Array.isArray(i.operatorStock) ? i.operatorStock : Object.keys(i.operatorStock);
+            opList.forEach(op => { 
+                normalizedPrices.push({ pid: i.id, price: i.price, opCode: op, opName: cleanOpName(op) }); 
+            });
+        }
+    });
 
     if (normalizedPrices.length === 0) {
         box.innerHTML = `<div style="padding:30px; text-align:center; color:var(--fb-red); font-weight:900;">Stok di rentang harga ini kosong.</div>`;
@@ -526,7 +502,7 @@ window.openProviderMenu = openProviderMenu;
 function createCardHTML(oId, phone, priceDisplay, resendState, cancelState, replaceState, otpDisplay, isDone = false, isRecycled = false, expireTime = 0, operatorName = "UNKNOWN", isHidden = false) {
     const doneStyle = isDone ? 'style="background:#e6f4ea; color:var(--fb-green); border-color:var(--fb-green);"' : 'disabled';
     
-    let bColor = activeProviderKey === "herosms" ? "#8e44ad" : activeProviderKey === "smscode" ? "#95a5a6" : activeProviderKey === "smsvirt" ? "#007bff" : activeProviderKey === "smsvirt_wa" ? "#25D366" : "#ff7b00"; 
+    let bColor = "#25D366"; 
     
     const phoneColorStyle = isRecycled ? 'color: var(--fb-red);' : '';
     const recycledBadge = isRecycled ? `<span style="font-size:9px; color:#fff; background:var(--fb-red); padding:2px 5px; border-radius:4px; margin-left:8px;">DAUR ULANG</span>` : '';
@@ -615,17 +591,14 @@ export async function executeBuySms(pid, price, name, operator, countryRank = ""
     const pText = formatDisplayPrice(price, PROVIDERS[activeProviderKey].currency);
     if(!await showModal("Konfirmasi", `Beli nomor untuk ${name.toUpperCase()} seharga ${pText.replace(/<[^>]*>?/gm, '')}?`, "confirm")) return;
 
-    let payload = (activeProviderKey === "smscode") ? 
-        { type: "product", product_id: parseInt(pid), price: Number(price), operator: name } : 
-        { product_id: String(pid), price: price, operator: operator };
+    let payload = { product_id: String(pid), price: price, operator: operator };
 
     const j = await apiCall('/create-order', 'POST', payload);
     if(j.success && j.data) {
         localStorage.setItem(`pid_${activeProviderKey}_${j.data.orders[0].id}`, pid);
         localStorage.setItem(`price_${activeProviderKey}_${j.data.orders[0].id}`, price);
         
-        const savedOp = (activeProviderKey === "smscode") ? name : operator;
-        if (savedOp) localStorage.setItem(`op_${activeProviderKey}_${j.data.orders[0].id}`, savedOp);
+        if (operator) localStorage.setItem(`op_${activeProviderKey}_${j.data.orders[0].id}`, operator);
         
         if(j.data.orders[0].is_recycled) playSimpleSound('recycled');
         showBuySuccessNotif(); 
@@ -834,10 +807,7 @@ export async function actSms(action, id) {
                 waiting_for_new_otp: true
             });
         }
-        
-        if (activeProviderKey === 'herosms' || activeProviderKey === 'smscode' || activeProviderKey === 'smsvirt' || activeProviderKey === 'smsvirt_wa') {
-            return; 
-        }
+        return; 
     }
 
     const j = await apiCall('/order-action', 'POST', { id, action });
@@ -848,13 +818,6 @@ export async function actSms(action, id) {
         }
         pollSms(); updateSmsBal();
     } else {
-        if (action === 'resend') {
-             if (globalOrders[id]) globalOrders[id].waiting_for_new_otp = null;
-             renderSmsOrders();
-             db.ref(`OTP/${activeProviderKey}/${currentServerName}/${id}`).update({
-                waiting_for_new_otp: null
-            });
-        }
         showModal("Gagal", j.error?.message || "Aksi ditolak server.", "alert");
     }
 }
