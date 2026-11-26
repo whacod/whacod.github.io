@@ -641,7 +641,6 @@ export async function executeBuySms(pid, price, name, operator, isCatalog = fals
         if (operator) localStorage.setItem(`op_${activeProviderKey}_${orderId}`, operator);
         if (name) localStorage.setItem(`opname_${activeProviderKey}_${orderId}`, name);
         
-        // Simpan & render langsung dari browser agar kartu nomor langsung muncul
         if (activeProviderKey === "otpinstan_wa" && newOrder.id && newOrder.phone) {
             globalOrders[String(newOrder.id)] = newOrder;
             renderSmsOrders();
