@@ -436,7 +436,7 @@ async function loadSmsPrices() {
         let idr = isUsd ? (parseFloat(i.price) * currentUsdRate) : parseFloat(i.price); 
         return idr >= cMin && idr <= cMax && (i.available === undefined || i.available > 0); 
     }).forEach(i => {
-        // 1. Jika API memiliki operatorStock (seperti WSVC / smsvirt_wa)
+        // 1. Jika API memiliki operatorStock (WSVC / smsvirt_wa)
         if (i.operatorStock) {
             normalizedPrices.push({ pid: i.id, price: i.price, opCode: 'any', opName: 'ANY (ACAK)', isCatalog: false });
             let opList = Array.isArray(i.operatorStock) ? i.operatorStock : Object.keys(i.operatorStock);
@@ -444,7 +444,51 @@ async function loadSmsPrices() {
                 normalizedPrices.push({ pid: i.id, price: i.price, opCode: op, opName: cleanOpName(op), isCatalog: false });
             });
         }
-        // 2. Jika API mengembalikan operator langsung per item (WCOD & WINS)
+        // 2. Jika WCOD (smscode_wa) -> pecah ke daftar operator agar pilihan provider lengkap
+        else if (activeProviderKey === "smscode_wa") {
+            const basePid = i.catalog_product_id || i.id;
+            const wcodOps = activeCountry === "PH"
+                ? [
+                    { code: i.injected_operator_id || "any", name: "ANY (ACAK)" },
+                    { code: "globe", name: "GLOBE" },
+                    { code: "smart", name: "SMART" },
+                    { code: "sun", name: "SUN" },
+                    { code: "tm", name: "TM" },
+                    { code: "tnt", name: "TNT" },
+                    { code: "dito", name: "DITO" }
+                  ]
+                : [
+                    { code: i.injected_operator_id || "any", name: "ANY (ACAK)" },
+                    { code: "axis", name: "AXIS" },
+                    { code: "byu", name: "BYU" },
+                    { code: "indosat", name: "INDOSAT" },
+                    { code: "smartfren", name: "SMARTFREN" },
+                    { code: "telkomsel", name: "TELKOMSEL" },
+                    { code: "three", name: "THREE" },
+                    { code: "xl", name: "XL" }
+                  ];
+
+            if (i.operator && String(i.operator).toLowerCase() !== "any") {
+                normalizedPrices.push({
+                    pid: basePid,
+                    price: i.price,
+                    opCode: i.injected_operator_id || i.operator,
+                    opName: cleanOpName(i.operator),
+                    isCatalog: true
+                });
+            }
+
+            wcodOps.forEach(op => {
+                normalizedPrices.push({
+                    pid: basePid,
+                    price: i.price,
+                    opCode: op.code,
+                    opName: op.name,
+                    isCatalog: true
+                });
+            });
+        }
+        // 3. Jika API mengembalikan operator langsung per item (WINS / otpinstan_wa)
         else if (i.operator !== undefined && i.operator !== null && String(i.operator).trim() !== "") {
             let opCode = i.injected_operator_id || i.operator || 'any';
             let opName = cleanOpName(i.operator);
@@ -453,17 +497,17 @@ async function loadSmsPrices() {
                 price: i.price,
                 opCode: opCode,
                 opName: opName,
-                isCatalog: activeProviderKey !== "otpinstan_wa"
+                isCatalog: false
             });
         }
-        // 3. Fallback jika tidak ada operator maupun operatorStock
+        // 4. Fallback
         else {
             normalizedPrices.push({
                 pid: i.catalog_product_id || i.id,
                 price: i.price,
                 opCode: i.injected_operator_id || 'any',
                 opName: 'ANY (ACAK)',
-                isCatalog: activeProviderKey === "smscode_wa"
+                isCatalog: false
             });
         }
     });
