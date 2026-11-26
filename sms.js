@@ -177,6 +177,62 @@ export function changeSmsCountry() {
 window.changeSmsCountry = changeSmsCountry;
 
 // ==========================================
+// TOMBOL REFRESH HARGA KHUSUS WNOK
+// ==========================================
+function updateWnokPriceRefreshBtn() {
+    const box = document.getElementById('sms-prices');
+    if (!box) return;
+
+    let existingBtn = document.getElementById('btn-refresh-wnok-prices');
+
+    // Jika bukan WNOK, sembunyikan/hapus tombol khusus ini
+    if (activeProviderKey !== "nokospusat_wa") {
+        if (existingBtn) existingBtn.remove();
+        return;
+    }
+
+    if (!existingBtn) {
+        const btn = document.createElement('button');
+        btn.id = 'btn-refresh-wnok-prices';
+        btn.type = 'button';
+        btn.innerHTML = '<i class="fa-solid fa-arrows-rotate" id="icon-refresh-wnok"></i> REFRESH HARGA';
+        btn.style.cssText = `
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: #e8f4fd;
+            color: #0984e3;
+            border: 1px solid #b6dcfc;
+            padding: 5px 10px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 900;
+            cursor: pointer;
+            margin-left: auto;
+        `;
+        btn.onclick = async () => {
+            const icon = document.getElementById('icon-refresh-wnok');
+            if (icon) icon.classList.add('fa-spin');
+            box.innerHTML = '<div style="padding:30px; text-align:center; color:#888;">Memperbarui Harga WNOK...</div>';
+            await loadSmsPrices();
+            if (icon) setTimeout(() => icon.classList.remove('fa-spin'), 400);
+        };
+
+        // Cari elemen label "DAFTAR HARGA" di atas kotak harga agar tombol sejajar rapi
+        const prevEl = box.previousElementSibling;
+        if (prevEl && prevEl.textContent && prevEl.textContent.toUpperCase().includes('DAFTAR HARGA')) {
+            prevEl.style.display = 'flex';
+            prevEl.style.alignItems = 'center';
+            prevEl.style.justifyContent = 'space-between';
+            prevEl.appendChild(btn);
+        } else {
+            btn.style.marginBottom = '10px';
+            box.parentNode.insertBefore(btn, box);
+        }
+    }
+}
+
+// ==========================================
 // 4. INISIALISASI & KONTROL SERVER UI
 // ==========================================
 async function initSms() {
@@ -258,6 +314,7 @@ async function initSms() {
     }
 
     updateCountryDropdown();
+    updateWnokPriceRefreshBtn();
     applySmsLock();
     await loadServersList();
     attachGlobalOrderListener(); 
@@ -280,6 +337,7 @@ export async function changeSmsProvider() {
     document.getElementById('inner-hidden-orders').innerHTML = ''; 
     
     updateCountryDropdown();
+    updateWnokPriceRefreshBtn();
     await loadServersList();
     
     favoritePrices = JSON.parse(localStorage.getItem(`sms_fav_prices_${activeProviderKey}_${activeCountry}`) || "[]");
@@ -320,7 +378,7 @@ export function changeSmsServer() {
 window.changeSmsServer = changeSmsServer;
 
 export function refreshSms() {
-    const refreshIcons = document.querySelectorAll('.fa-arrows-rotate, .fa-sync');
+    const refreshIcons = document.querySelectorAll('#btn-refresh-sms .fa-arrows-rotate, .fa-sync');
     refreshIcons.forEach(icon => {
         icon.classList.add('fa-spin');
         setTimeout(() => icon.classList.remove('fa-spin'), 1000);
@@ -445,7 +503,7 @@ async function loadSmsPrices() {
                 normalizedPrices.push({ pid: i.id, price: i.price, opCode: op, opName: cleanOpName(op), isCatalog: false });
             });
         }
-        // 2. Jika WCOD (smscode_wa) -> pecah ke daftar operator agar pilihan provider lengkap
+        // 2. Jika WCOD (smscode_wa)
         else if (activeProviderKey === "smscode_wa") {
             const basePid = i.catalog_product_id || i.id;
             const wcodOps = activeCountry === "PH"
@@ -489,7 +547,7 @@ async function loadSmsPrices() {
                 });
             });
         }
-        // 3. Jika API mengembalikan operator langsung per item (WINS / otpinstan_wa & WNOK / nokospusat_wa)
+        // 3. Jika API mengembalikan operator langsung per item (WINS & WNOK)
         else if (i.operator !== undefined && i.operator !== null && String(i.operator).trim() !== "") {
             let opCode = i.injected_operator_id || i.operator || 'any';
             let opName = cleanOpName(i.operator);
