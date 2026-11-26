@@ -8,6 +8,7 @@ const PROVIDERS = {
     "smsvirt_wa": { name: "WSVC", url: "https://whacod.camarugulam.workers.dev", currency: "USD", minPrice: 0, maxPrice: 30000 },
     "smscode_wa": { name: "WCOD", url: "https://wcod.camarugulam.workers.dev", currency: "IDR", minPrice: 0, maxPrice: 100000 },
     "otpinstan_wa": { name: "WINS", url: "https://wins.camarugulam.workers.dev", currency: "IDR", minPrice: 0, maxPrice: 100000 },
+    "nokospusat_wa": { name: "WNOK", url: "https://wnokos.camarugulam.workers.dev", currency: "IDR", minPrice: 0, maxPrice: 100000 },
 };
 
 let activeProviderKey = localStorage.getItem('xurel_provider') || "smscode_wa";
@@ -488,7 +489,7 @@ async function loadSmsPrices() {
                 });
             });
         }
-        // 3. Jika API mengembalikan operator langsung per item (WINS / otpinstan_wa)
+        // 3. Jika API mengembalikan operator langsung per item (WINS / otpinstan_wa & WNOK / nokospusat_wa)
         else if (i.operator !== undefined && i.operator !== null && String(i.operator).trim() !== "") {
             let opCode = i.injected_operator_id || i.operator || 'any';
             let opName = cleanOpName(i.operator);
@@ -580,7 +581,9 @@ window.openProviderMenu = openProviderMenu;
 function createCardHTML(oId, phone, priceDisplay, resendState, cancelState, replaceState, otpDisplay, isDone = false, isRecycled = false, expireTime = 0, operatorName = "UNKNOWN", isHidden = false) {
     const doneStyle = isDone ? 'style="background:#e6f4ea; color:var(--fb-green); border-color:var(--fb-green);"' : 'disabled';
     
-    let bColor = activeProviderKey === "otpinstan_wa" ? "#00a884" : "#25D366"; 
+    let bColor = activeProviderKey === "otpinstan_wa" ? "#00a884" 
+               : activeProviderKey === "nokospusat_wa" ? "#0984e3"
+               : "#25D366"; 
     
     const phoneColorStyle = isRecycled ? 'color: var(--fb-red);' : '';
     const recycledBadge = isRecycled ? `<span style="font-size:9px; color:#fff; background:var(--fb-red); padding:2px 5px; border-radius:4px; margin-left:8px;">DAUR ULANG</span>` : '';
@@ -670,7 +673,7 @@ export async function executeBuySms(pid, price, name, operator, isCatalog = fals
     if(!await showModal("Konfirmasi", `Beli nomor untuk ${name.toUpperCase()} seharga ${pText.replace(/<[^>]*>?/gm, '')}?`, "confirm")) return;
 
     let payload = {};
-    if (activeProviderKey === "otpinstan_wa") {
+    if (activeProviderKey === "otpinstan_wa" || activeProviderKey === "nokospusat_wa") {
         payload = { product_id: String(pid), price: Number(price), operator: operator };
     } else if (isCatalog || activeProviderKey === "smscode_wa") {
         payload = {
@@ -696,7 +699,7 @@ export async function executeBuySms(pid, price, name, operator, isCatalog = fals
         if (operator) localStorage.setItem(`op_${activeProviderKey}_${orderId}`, operator);
         if (name) localStorage.setItem(`opname_${activeProviderKey}_${orderId}`, name);
         
-        if (activeProviderKey === "otpinstan_wa" && newOrder.id && newOrder.phone) {
+        if ((activeProviderKey === "otpinstan_wa" || activeProviderKey === "nokospusat_wa") && newOrder.id && newOrder.phone) {
             globalOrders[String(newOrder.id)] = newOrder;
             renderSmsOrders();
             db.ref(`OTP/${activeProviderKey}/${currentServerName}/${newOrder.id}`).set(newOrder).catch(() => {});
@@ -718,7 +721,7 @@ async function pollSms() {
     isPolling = true;
     try {
         const res = await apiCall('/get-active', 'GET');
-        if (activeProviderKey === "otpinstan_wa" && res && res.orders) {
+        if ((activeProviderKey === "otpinstan_wa" || activeProviderKey === "nokospusat_wa") && res && res.orders) {
             Object.entries(res.orders).forEach(([oId, oData]) => {
                 if (!oData) {
                     delete globalOrders[oId];
@@ -903,10 +906,12 @@ function updateSmsTimers() {
 export async function actSms(action, id) {
     if (!await showModal("Konfirmasi", "Lanjutkan aksi ini?", "confirm")) return;
 
+    const isDirectFirebaseProvider = (activeProviderKey === 'otpinstan_wa' || activeProviderKey === 'nokospusat_wa');
+
     if (action === 'replace') {
         const jCancel = await apiCall('/order-action', 'POST', { id, action: 'cancel' });
         if (jCancel.success) {
-            if (activeProviderKey === 'otpinstan_wa') {
+            if (isDirectFirebaseProvider) {
                 delete globalOrders[id];
                 renderSmsOrders();
                 db.ref(`OTP/${activeProviderKey}/${currentServerName}/${id}`).remove().catch(() => {});
@@ -934,7 +939,7 @@ export async function actSms(action, id) {
                 waiting_for_new_otp: true
             });
         }
-        if (activeProviderKey !== 'otpinstan_wa') {
+        if (!isDirectFirebaseProvider) {
             return; 
         }
     }
@@ -944,7 +949,7 @@ export async function actSms(action, id) {
         if (action === 'finish' || action === 'cancel') {
             delete window.orderOtpIndex[id];
             delete window.orderOtpCount[id];
-            if (activeProviderKey === 'otpinstan_wa') {
+            if (isDirectFirebaseProvider) {
                 delete globalOrders[id];
                 renderSmsOrders();
                 db.ref(`OTP/${activeProviderKey}/${currentServerName}/${id}`).remove().catch(() => {});
