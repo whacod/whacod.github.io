@@ -7,7 +7,7 @@ import { db, auth } from './firebase.js';
 const PROVIDERS = {
     "smsvirt_wa": { name: "WSVC", url: "https://whacod.camarugulam.workers.dev", currency: "USD", minPrice: 0, maxPrice: 30000 },
     "smscode_wa": { name: "WCOD", url: "https://wcod.camarugulam.workers.dev", currency: "IDR", minPrice: 0, maxPrice: 100000 },
-    "otpinstan_wa": { name: "WINS", url: "https://winstan.camarugulam.workers.dev", currency: "IDR", minPrice: 0, maxPrice: 100000 },
+    "otpinstan_wa": { name: "WINS", url: "https://wins.camarugulam.workers.dev", currency: "IDR", minPrice: 0, maxPrice: 100000 },
 };
 
 let activeProviderKey = localStorage.getItem('xurel_provider') || "smscode_wa";
