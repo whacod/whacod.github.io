@@ -5,8 +5,8 @@ import { db, auth } from './firebase.js';
 // 1. KONFIGURASI PROVIDER (KHUSUS WHA)
 // ==========================================
 const PROVIDERS = {
-    "smsvirt_wa": { name: "WVIR", url: "https://whacod.camarugulam.workers.dev", currency: "USD", minPrice: 0, maxPrice: 30000 },
-    "smscode_wa": { name: "WCOD", url: "https://wcod.camarugulam.workers.dev", currency: "USD", minPrice: 0, maxPrice: 30000 },
+    "smsvirt_wa": { name: "WHA", url: "https://whacod.camarugulam.workers.dev", currency: "USD", minPrice: 0, maxPrice: 30000 },
+    "smscode_wa": { name: "WCOD", url: "https://wcod.camarugulam.workers.dev", currency: "IDR", minPrice: 0, maxPrice: 100000 },
 };
 
 let activeProviderKey = localStorage.getItem('xurel_provider') || "smscode_wa";
@@ -421,13 +421,13 @@ async function loadSmsPrices() {
     let normalizedPrices = [];
     let cMin = PROVIDERS[activeProviderKey].minPrice;
     let cMax = PROVIDERS[activeProviderKey].maxPrice;
+    let isUsd = PROVIDERS[activeProviderKey].currency === "USD";
     
     json.data.filter(i => { 
-        let idr = parseFloat(i.price) * currentUsdRate; 
+        let idr = isUsd ? (parseFloat(i.price) * currentUsdRate) : parseFloat(i.price); 
         return idr >= cMin && idr <= cMax && (i.available === undefined || i.available > 0); 
     }).forEach(i => {
         if (i.operator !== undefined) {
-            // Format dari Worker SMSCode (wcod.camarugulam.workers.dev)
             let opCode = i.injected_operator_id || 'any';
             let opName = cleanOpName(i.operator);
             normalizedPrices.push({
@@ -438,7 +438,6 @@ async function loadSmsPrices() {
                 isCatalog: true
             });
         } else {
-            // Format dari Worker lama (whacod.camarugulam.workers.dev)
             normalizedPrices.push({ pid: i.id, price: i.price, opCode: 'any', opName: 'ANY (ACAK)', isCatalog: false });
             if (i.operatorStock) {
                 let opList = Array.isArray(i.operatorStock) ? i.operatorStock : Object.keys(i.operatorStock);
