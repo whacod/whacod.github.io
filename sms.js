@@ -7,6 +7,7 @@ import { db, auth } from './firebase.js';
 const PROVIDERS = {
     "smsvirt_wa": { name: "WSVC", url: "https://whacod.camarugulam.workers.dev", currency: "USD", minPrice: 0, maxPrice: 30000 },
     "smscode_wa": { name: "WCOD", url: "https://wcod.camarugulam.workers.dev", currency: "IDR", minPrice: 0, maxPrice: 100000 },
+    "otpinstan_wa": { name: "WINS", url: "https://winstan.camarugulam.workers.dev", currency: "IDR", minPrice: 0, maxPrice: 100000 },
 };
 
 let activeProviderKey = localStorage.getItem('xurel_provider') || "smscode_wa";
@@ -53,7 +54,15 @@ function attachGlobalOrderListener() {
     if (window.ordersRef) window.ordersRef.off();
     window.ordersRef = db.ref(path);
     window.ordersRef.on('value', snap => {
-        globalOrders = snap.val() || {};
+        const val = snap.val();
+        if (val) {
+            globalOrders = { ...globalOrders, ...val };
+            Object.keys(globalOrders).forEach(k => {
+                if (!val[k]) delete globalOrders[k];
+            });
+        } else {
+            globalOrders = {};
+        }
         renderSmsOrders(); 
     });
 }
@@ -289,7 +298,7 @@ async function loadServersList() {
         if(res.success && res.servers) select.innerHTML = res.servers.map(k => `<option value="${k}">${k}</option>`).join('');
         else throw new Error("Kosong");
     } catch (e) {
-        select.innerHTML = ["A", "B", "C", "D", "E"].map(k => `<option value="${k}">${k}</option>`).join('');
+        select.innerHTML = ["HP1", "HP2", "HP3", "HP4", "HP5", "HP6", "HP7"].map(k => `<option value="${k}">${k}</option>`).join('');
     }
     const saved = localStorage.getItem(`xurel_hp_${activeProviderKey}`);
     currentServerName = (saved && Array.from(select.options).some(o => o.value === saved)) ? saved : select.options[0].value;
@@ -428,14 +437,14 @@ async function loadSmsPrices() {
         return idr >= cMin && idr <= cMax && (i.available === undefined || i.available > 0); 
     }).forEach(i => {
         if (i.operator !== undefined) {
-            let opCode = i.injected_operator_id || 'any';
+            let opCode = i.injected_operator_id || i.operator || 'any';
             let opName = cleanOpName(i.operator);
             normalizedPrices.push({
                 pid: i.catalog_product_id || i.id,
                 price: i.price,
                 opCode: opCode,
                 opName: opName,
-                isCatalog: true
+                isCatalog: activeProviderKey !== "otpinstan_wa"
             });
         } else {
             normalizedPrices.push({ pid: i.id, price: i.price, opCode: 'any', opName: 'ANY (ACAK)', isCatalog: false });
@@ -516,7 +525,7 @@ window.openProviderMenu = openProviderMenu;
 function createCardHTML(oId, phone, priceDisplay, resendState, cancelState, replaceState, otpDisplay, isDone = false, isRecycled = false, expireTime = 0, operatorName = "UNKNOWN", isHidden = false) {
     const doneStyle = isDone ? 'style="background:#e6f4ea; color:var(--fb-green); border-color:var(--fb-green);"' : 'disabled';
     
-    let bColor = "#25D366"; 
+    let bColor = activeProviderKey === "otpinstan_wa" ? "#00a884" : "#25D366"; 
     
     const phoneColorStyle = isRecycled ? 'color: var(--fb-red);' : '';
     const recycledBadge = isRecycled ? `<span style="font-size:9px; color:#fff; background:var(--fb-red); padding:2px 5px; border-radius:4px; margin-left:8px;">DAUR ULANG</span>` : '';
@@ -606,7 +615,9 @@ export async function executeBuySms(pid, price, name, operator, isCatalog = fals
     if(!await showModal("Konfirmasi", `Beli nomor untuk ${name.toUpperCase()} seharga ${pText.replace(/<[^>]*>?/gm, '')}?`, "confirm")) return;
 
     let payload = {};
-    if (isCatalog || activeProviderKey === "smscode_wa") {
+    if (activeProviderKey === "otpinstan_wa") {
+        payload = { product_id: String(pid), price: Number(price), operator: operator };
+    } else if (isCatalog || activeProviderKey === "smscode_wa") {
         payload = {
             type: "catalog",
             catalog_product_id: String(pid),
@@ -620,8 +631,9 @@ export async function executeBuySms(pid, price, name, operator, isCatalog = fals
     }
 
     const j = await apiCall('/create-order', 'POST', payload);
-    if(j.success && j.data) {
-        const orderId = j.data.orders[0].id;
+    if(j.success && j.data && j.data.orders && j.data.orders[0]) {
+        const newOrder = j.data.orders[0];
+        const orderId = newOrder.id;
         localStorage.setItem(`pid_${activeProviderKey}_${orderId}`, pid);
         localStorage.setItem(`price_${activeProviderKey}_${orderId}`, price);
         localStorage.setItem(`iscat_${activeProviderKey}_${orderId}`, isCatalog ? "true" : "false");
@@ -629,7 +641,14 @@ export async function executeBuySms(pid, price, name, operator, isCatalog = fals
         if (operator) localStorage.setItem(`op_${activeProviderKey}_${orderId}`, operator);
         if (name) localStorage.setItem(`opname_${activeProviderKey}_${orderId}`, name);
         
-        if(j.data.orders[0].is_recycled) playSimpleSound('recycled');
+        // Simpan & render langsung dari browser agar kartu nomor langsung muncul
+        if (activeProviderKey === "otpinstan_wa" && newOrder.id && newOrder.phone) {
+            globalOrders[String(newOrder.id)] = newOrder;
+            renderSmsOrders();
+            db.ref(`OTP/${activeProviderKey}/${currentServerName}/${newOrder.id}`).set(newOrder).catch(() => {});
+        }
+        
+        if(newOrder.is_recycled) playSimpleSound('recycled');
         showBuySuccessNotif(); 
 
         pollSms(); updateSmsBal();
@@ -643,12 +662,30 @@ window.executeBuySms = executeBuySms;
 async function pollSms() {
     if (isPolling) return;
     isPolling = true;
-    try { await apiCall('/get-active', 'GET'); } catch (e) {} finally { isPolling = false; }
+    try {
+        const res = await apiCall('/get-active', 'GET');
+        if (activeProviderKey === "otpinstan_wa" && res && res.orders) {
+            Object.entries(res.orders).forEach(([oId, oData]) => {
+                if (!oData) {
+                    delete globalOrders[oId];
+                    db.ref(`OTP/${activeProviderKey}/${currentServerName}/${oId}`).remove().catch(() => {});
+                } else {
+                    globalOrders[oId] = { ...(globalOrders[oId] || {}), ...oData };
+                    db.ref(`OTP/${activeProviderKey}/${currentServerName}/${oId}`).update(oData).catch(() => {});
+                }
+            });
+            renderSmsOrders();
+        }
+    } catch (e) {} finally { isPolling = false; }
 }
 
 export function localHideSmsCard(id) {
     const strId = String(id);
     const hiddenStatus = globalOrders[strId] ? globalOrders[strId].hidden : false;
+    if (globalOrders[strId]) {
+        globalOrders[strId].hidden = !hiddenStatus;
+        renderSmsOrders();
+    }
     db.ref(`OTP/${activeProviderKey}/${currentServerName}/${strId}/hidden`).set(!hiddenStatus);
 }
 window.localHideSmsCard = localHideSmsCard;
@@ -815,6 +852,11 @@ export async function actSms(action, id) {
     if (action === 'replace') {
         const jCancel = await apiCall('/order-action', 'POST', { id, action: 'cancel' });
         if (jCancel.success) {
+            if (activeProviderKey === 'otpinstan_wa') {
+                delete globalOrders[id];
+                renderSmsOrders();
+                db.ref(`OTP/${activeProviderKey}/${currentServerName}/${id}`).remove().catch(() => {});
+            }
             const oldPid = localStorage.getItem(`pid_${activeProviderKey}_${id}`);
             const oldPrice = localStorage.getItem(`price_${activeProviderKey}_${id}`);
             const oldOp = localStorage.getItem(`op_${activeProviderKey}_${id}`) || "any";
@@ -838,7 +880,9 @@ export async function actSms(action, id) {
                 waiting_for_new_otp: true
             });
         }
-        return; 
+        if (activeProviderKey !== 'otpinstan_wa') {
+            return; 
+        }
     }
 
     const j = await apiCall('/order-action', 'POST', { id, action });
@@ -846,9 +890,21 @@ export async function actSms(action, id) {
         if (action === 'finish' || action === 'cancel') {
             delete window.orderOtpIndex[id];
             delete window.orderOtpCount[id];
+            if (activeProviderKey === 'otpinstan_wa') {
+                delete globalOrders[id];
+                renderSmsOrders();
+                db.ref(`OTP/${activeProviderKey}/${currentServerName}/${id}`).remove().catch(() => {});
+            }
         }
         pollSms(); updateSmsBal();
     } else {
+        if (action === 'resend') {
+            if (globalOrders[id]) globalOrders[id].waiting_for_new_otp = null;
+            renderSmsOrders();
+            db.ref(`OTP/${activeProviderKey}/${currentServerName}/${id}`).update({
+                waiting_for_new_otp: null
+            });
+        }
         showModal("Gagal", j.error?.message || "Aksi ditolak server.", "alert");
     }
 }
