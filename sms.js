@@ -185,7 +185,6 @@ function updateWnokPriceRefreshBtn() {
 
     let existingBtn = document.getElementById('btn-refresh-wnok-prices');
 
-    // Jika bukan WNOK, sembunyikan/hapus tombol khusus ini
     if (activeProviderKey !== "nokospusat_wa") {
         if (existingBtn) existingBtn.remove();
         return;
@@ -218,7 +217,6 @@ function updateWnokPriceRefreshBtn() {
             if (icon) setTimeout(() => icon.classList.remove('fa-spin'), 400);
         };
 
-        // Cari elemen label "DAFTAR HARGA" di atas kotak harga agar tombol sejajar rapi
         const prevEl = box.previousElementSibling;
         if (prevEl && prevEl.textContent && prevEl.textContent.toUpperCase().includes('DAFTAR HARGA')) {
             prevEl.style.display = 'flex';
@@ -421,7 +419,8 @@ window.applySmsLock = applySmsLock;
 
 async function apiCall(endpoint, method = "GET", body = null) {
     const options = { 
-        method, 
+        method,
+        cache: "no-store",
         headers: { 
             "Content-Type": "application/json", 
             "X-Server-Name": currentServerName 
@@ -434,7 +433,7 @@ async function apiCall(endpoint, method = "GET", body = null) {
     }
 
     const separator = endpoint.includes('?') ? '&' : '?';
-    const finalEndpoint = `${endpoint}${separator}country=${activeCountry}`;
+    const finalEndpoint = `${endpoint}${separator}country=${activeCountry}&_t=${Date.now()}`;
 
     try {
         const controller = new AbortController();
