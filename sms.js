@@ -5,11 +5,12 @@ import { db, auth } from './firebase.js';
 // 1. KONFIGURASI PROVIDER (KHUSUS WHA)
 // ==========================================
 const PROVIDERS = {
-    "smsvirt_wa": { name: "WHA", url: "https://whacod.camarugulam.workers.dev", currency: "USD", minPrice: 0, maxPrice: 30000 },
+    "smsvirt_wa": { name: "WVIR", url: "https://whacod.camarugulam.workers.dev", currency: "USD", minPrice: 0, maxPrice: 30000 },
+    "smscode_wa": { name: "WCOD", url: "https://wcod.camarugulam.workers.dev", currency: "USD", minPrice: 0, maxPrice: 30000 },
 };
 
-let activeProviderKey = localStorage.getItem('xurel_provider') || "smsvirt_wa";
-if (!PROVIDERS[activeProviderKey]) activeProviderKey = "smsvirt_wa";
+let activeProviderKey = localStorage.getItem('xurel_provider') || "smscode_wa";
+if (!PROVIDERS[activeProviderKey]) activeProviderKey = "smscode_wa";
 let BASE_URL = PROVIDERS[activeProviderKey].url;
 
 let currentServerName = ""; 
@@ -127,7 +128,7 @@ function formatDisplayPrice(price, currency) {
 }
 
 function cleanOpName(name) {
-    if (!name || name === "any") return "ANY (ACAK)";
+    if (!name || name === "any" || name === "ANY") return "ANY (ACAK)";
     return String(name).toUpperCase().replace(" OOREDOO", "").trim();
 }
 
@@ -423,14 +424,28 @@ async function loadSmsPrices() {
     
     json.data.filter(i => { 
         let idr = parseFloat(i.price) * currentUsdRate; 
-        return idr >= cMin && idr <= cMax; 
+        return idr >= cMin && idr <= cMax && (i.available === undefined || i.available > 0); 
     }).forEach(i => {
-        normalizedPrices.push({ pid: i.id, price: i.price, opCode: 'any', opName: 'ANY (ACAK)' });
-        if (i.operatorStock) {
-            let opList = Array.isArray(i.operatorStock) ? i.operatorStock : Object.keys(i.operatorStock);
-            opList.forEach(op => { 
-                normalizedPrices.push({ pid: i.id, price: i.price, opCode: op, opName: cleanOpName(op) }); 
+        if (i.operator !== undefined) {
+            // Format dari Worker SMSCode (wcod.camarugulam.workers.dev)
+            let opCode = i.injected_operator_id || 'any';
+            let opName = cleanOpName(i.operator);
+            normalizedPrices.push({
+                pid: i.catalog_product_id || i.id,
+                price: i.price,
+                opCode: opCode,
+                opName: opName,
+                isCatalog: true
             });
+        } else {
+            // Format dari Worker lama (whacod.camarugulam.workers.dev)
+            normalizedPrices.push({ pid: i.id, price: i.price, opCode: 'any', opName: 'ANY (ACAK)', isCatalog: false });
+            if (i.operatorStock) {
+                let opList = Array.isArray(i.operatorStock) ? i.operatorStock : Object.keys(i.operatorStock);
+                opList.forEach(op => { 
+                    normalizedPrices.push({ pid: i.id, price: i.price, opCode: op, opName: cleanOpName(op), isCatalog: false }); 
+                });
+            }
         }
     });
 
@@ -486,7 +501,7 @@ export function openProviderMenu(price) {
         let pinBadgeHTML = isFavOp ? `<span style="color: var(--fb-green); font-weight: 900; margin-left: 8px;">AKTIF</span>` : '';
         let pinIconHTML = isFavOp ? `<i class="fa-solid fa-circle-check" onclick="event.stopPropagation(); toggleFavoriteOp('${item.opName.toUpperCase()}')" style="color: var(--fb-green); font-size:16px; cursor:pointer; padding-left:10px;"></i>` : `<i class="fa-regular fa-circle" onclick="event.stopPropagation(); toggleFavoriteOp('${item.opName.toUpperCase()}')" style="color: #bdc3c7; font-size:16px; cursor:pointer; padding-left:10px;"></i>`;
         return `<div class="price-item" style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px; padding: 12px 15px; background: #fff; border: 1px solid #eee; border-radius: 8px;">
-                    <div style="flex: 1; cursor: pointer; font-weight:900; color:var(--fb-text); display:flex; align-items:center;" onclick="executeBuySms('${item.pid}', ${item.price}, '${item.opName}', '${item.opCode}', '${item.country || ""}')">
+                    <div style="flex: 1; cursor: pointer; font-weight:900; color:var(--fb-text); display:flex; align-items:center;" onclick="executeBuySms('${item.pid}', ${item.price}, '${item.opName}', '${item.opCode}', ${item.isCatalog ? 'true' : 'false'})">
                         ${item.opName.toUpperCase()} ${pinBadgeHTML}
                     </div>${pinIconHTML}
                 </div>`;
@@ -587,18 +602,33 @@ function showOtpSuccessNotif() {
 // ==========================================
 // 7. RENDER LOGIC UTAMA SINKRONISASI FIREBASE
 // ==========================================
-export async function executeBuySms(pid, price, name, operator, countryRank = "") {
+export async function executeBuySms(pid, price, name, operator, isCatalog = false) {
     const pText = formatDisplayPrice(price, PROVIDERS[activeProviderKey].currency);
     if(!await showModal("Konfirmasi", `Beli nomor untuk ${name.toUpperCase()} seharga ${pText.replace(/<[^>]*>?/gm, '')}?`, "confirm")) return;
 
-    let payload = { product_id: String(pid), price: price, operator: operator };
+    let payload = {};
+    if (isCatalog || activeProviderKey === "smscode_wa") {
+        payload = {
+            type: "catalog",
+            catalog_product_id: String(pid),
+            operator_id: String(operator || "any"),
+            operator: name,
+            price: price,
+            max_price: String(price)
+        };
+    } else {
+        payload = { product_id: String(pid), price: price, operator: operator };
+    }
 
     const j = await apiCall('/create-order', 'POST', payload);
     if(j.success && j.data) {
-        localStorage.setItem(`pid_${activeProviderKey}_${j.data.orders[0].id}`, pid);
-        localStorage.setItem(`price_${activeProviderKey}_${j.data.orders[0].id}`, price);
+        const orderId = j.data.orders[0].id;
+        localStorage.setItem(`pid_${activeProviderKey}_${orderId}`, pid);
+        localStorage.setItem(`price_${activeProviderKey}_${orderId}`, price);
+        localStorage.setItem(`iscat_${activeProviderKey}_${orderId}`, isCatalog ? "true" : "false");
         
-        if (operator) localStorage.setItem(`op_${activeProviderKey}_${j.data.orders[0].id}`, operator);
+        if (operator) localStorage.setItem(`op_${activeProviderKey}_${orderId}`, operator);
+        if (name) localStorage.setItem(`opname_${activeProviderKey}_${orderId}`, name);
         
         if(j.data.orders[0].is_recycled) playSimpleSound('recycled');
         showBuySuccessNotif(); 
@@ -789,8 +819,10 @@ export async function actSms(action, id) {
             const oldPid = localStorage.getItem(`pid_${activeProviderKey}_${id}`);
             const oldPrice = localStorage.getItem(`price_${activeProviderKey}_${id}`);
             const oldOp = localStorage.getItem(`op_${activeProviderKey}_${id}`) || "any";
+            const oldOpName = localStorage.getItem(`opname_${activeProviderKey}_${id}`) || oldOp;
+            const oldIsCat = localStorage.getItem(`iscat_${activeProviderKey}_${id}`) === "true";
             
-            if (oldPid && oldPrice) await executeBuySms(oldPid, oldPrice, oldOp, oldOp, "");
+            if (oldPid && oldPrice) await executeBuySms(oldPid, oldPrice, oldOpName, oldOp, oldIsCat);
             else showModal("Info", "Nomor dibatalkan, silakan pilih ulang.", "alert");
         }
         return; 
