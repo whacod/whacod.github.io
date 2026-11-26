@@ -400,7 +400,7 @@ async function updateSmsBal() {
 }
 
 // ==========================================
-// 5. HARGA & LISTING
+// 5. HARGA & LISTING (MULTI-PROVIDER LENGKAP)
 // ==========================================
 export function toggleFavoritePrice(priceStr) {
     if (favoritePrices.includes(priceStr)) favoritePrices = favoritePrices.filter(x => x !== priceStr);
@@ -436,7 +436,16 @@ async function loadSmsPrices() {
         let idr = isUsd ? (parseFloat(i.price) * currentUsdRate) : parseFloat(i.price); 
         return idr >= cMin && idr <= cMax && (i.available === undefined || i.available > 0); 
     }).forEach(i => {
-        if (i.operator !== undefined) {
+        // 1. Jika API memiliki operatorStock (seperti WSVC / smsvirt_wa)
+        if (i.operatorStock) {
+            normalizedPrices.push({ pid: i.id, price: i.price, opCode: 'any', opName: 'ANY (ACAK)', isCatalog: false });
+            let opList = Array.isArray(i.operatorStock) ? i.operatorStock : Object.keys(i.operatorStock);
+            opList.forEach(op => {
+                normalizedPrices.push({ pid: i.id, price: i.price, opCode: op, opName: cleanOpName(op), isCatalog: false });
+            });
+        }
+        // 2. Jika API mengembalikan operator langsung per item (WCOD & WINS)
+        else if (i.operator !== undefined && i.operator !== null && String(i.operator).trim() !== "") {
             let opCode = i.injected_operator_id || i.operator || 'any';
             let opName = cleanOpName(i.operator);
             normalizedPrices.push({
@@ -446,14 +455,16 @@ async function loadSmsPrices() {
                 opName: opName,
                 isCatalog: activeProviderKey !== "otpinstan_wa"
             });
-        } else {
-            normalizedPrices.push({ pid: i.id, price: i.price, opCode: 'any', opName: 'ANY (ACAK)', isCatalog: false });
-            if (i.operatorStock) {
-                let opList = Array.isArray(i.operatorStock) ? i.operatorStock : Object.keys(i.operatorStock);
-                opList.forEach(op => { 
-                    normalizedPrices.push({ pid: i.id, price: i.price, opCode: op, opName: cleanOpName(op), isCatalog: false }); 
-                });
-            }
+        }
+        // 3. Fallback jika tidak ada operator maupun operatorStock
+        else {
+            normalizedPrices.push({
+                pid: i.catalog_product_id || i.id,
+                price: i.price,
+                opCode: i.injected_operator_id || 'any',
+                opName: 'ANY (ACAK)',
+                isCatalog: activeProviderKey === "smscode_wa"
+            });
         }
     });
 
