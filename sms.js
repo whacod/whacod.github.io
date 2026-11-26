@@ -5,7 +5,7 @@ import { db, auth } from './firebase.js';
 // 1. KONFIGURASI PROVIDER (KHUSUS WHA)
 // ==========================================
 const PROVIDERS = {
-    "smsvirt_wa": { name: "WHA", url: "https://whacod.camarugulam.workers.dev", currency: "USD", minPrice: 0, maxPrice: 30000 },
+    "smsvirt_wa": { name: "WSVC", url: "https://whacod.camarugulam.workers.dev", currency: "USD", minPrice: 0, maxPrice: 30000 },
     "smscode_wa": { name: "WCOD", url: "https://wcod.camarugulam.workers.dev", currency: "IDR", minPrice: 0, maxPrice: 100000 },
 };
 
