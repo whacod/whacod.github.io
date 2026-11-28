@@ -804,8 +804,31 @@ export function localHideSmsCard(id) {
 }
 window.localHideSmsCard = localHideSmsCard;
 
+function stripCountryCodeForCopy(phone) {
+    let clean = String(phone || '').replace(/[\s+\-]/g, '');
+
+    if (activeCountry === 'PH' && clean.startsWith('63')) {
+        return clean.slice(2);
+    }
+
+    if (activeCountry === 'ID' && clean.startsWith('62')) {
+        return clean.slice(2);
+    }
+
+    if (activeCountry === 'ID' && clean.startsWith('08')) {
+        return clean.slice(1);
+    }
+
+    if (activeCountry === 'PH' && clean.startsWith('09')) {
+        return clean.slice(1);
+    }
+
+    return clean;
+}
+
 export function copyPhoneNumber(txt, iconId) {
-    navigator.clipboard.writeText(txt);
+    const numberToCopy = stripCountryCodeForCopy(txt);
+    navigator.clipboard.writeText(numberToCopy);
     const icon = document.getElementById(iconId);
     if(icon) { icon.className = "fa-solid fa-circle-check"; icon.style.color = "var(--fb-green)"; setTimeout(() => { icon.className = "fa-regular fa-copy"; icon.style.color = "var(--fb-muted)"; }, 1500); }
 }
